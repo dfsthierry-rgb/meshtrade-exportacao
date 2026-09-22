@@ -1,0 +1,70 @@
+/* Item-level packing compositions plus optional general shipment summary. */
+S.useGeneralPack ??= false;
+S.generalPack ??= {cartons:'',packages:'',qty:'',length:'',width:'',height:'',net:'',gross:'',marks:'CENTRAL MESH / '+client().name,notes:''};
+
+document.head.insertAdjacentHTML('beforeend',`<style>
+.packmode{background:#17191a;color:#fff;padding:18px;margin-bottom:18px;display:grid;grid-template-columns:1fr 290px;gap:20px;align-items:center}.packmode h3{margin:0 0 5px}.packmode p{margin:0;color:#bec4c5}.packmode select{font-size:15px;font-weight:800}.itemgroup{border:1px solid var(--stroke);background:#f2f0e9;margin:18px 0;padding:14px}.itemgrouphead{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:12px}.itemgrouphead h3{margin:0;font-size:16px}.itemgrouphead small{display:block;color:var(--muted);margin-top:4px}.generalpack{border:2px solid #202324;background:#fffbea}.generalpack .logrowhead{background:#ffe500;margin:-16px -16px 14px;padding:12px 16px}.scopebadge{background:#242829;color:#fff;padding:5px 8px;font-size:10px;letter-spacing:.08em}.totalsCompare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}.totalsBox{background:#fff;border:1px solid var(--stroke);padding:16px}.totalsBox.active{border-top:4px solid var(--yellow)}.totalsBox h4{margin:0 0 10px}.totalsLine{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee}@media(max-width:800px){.packmode,.totalsCompare{grid-template-columns:1fr}}
+</style>`);
+
+function packingItems(){
+  const out=[];
+  S.orders.forEach((order,oi)=>order.items.forEach((item,ii)=>out.push({ref:`${order.order||oi}::${item.code||ii}::${ii}`,order:order.order||'',po:order.customerPO||'',item,oi,ii,label:`${item.code||'Item '+(ii+1)} — ${item.description||item.source||'Sem descrição'}`})));
+  return out;
+}
+function emptyItemPack(ref){const entry=packingItems().find(x=>x.ref===ref);return {itemRef:ref,box:S.packs.length+1,cartons:1,piecesPerCarton:'',packages:1,packagesPerCarton:'',netPerPackage:'',cartonTare:'',netPerCarton:'',grossPerCarton:'',description:entry?.item.description||'',length:'',width:'',height:'',net:'',gross:'',marks:'CENTRAL MESH / '+client().name,notes:''}}
+function ensureItemPacks(){
+  const items=packingItems(),refs=new Set(items.map(x=>x.ref));
+  S.packs=S.packs.filter(x=>!x.itemRef||refs.has(x.itemRef));
+  const legacy=S.packs.filter(x=>!x.itemRef);legacy.forEach((x,i)=>x.itemRef=items[Math.min(i,Math.max(0,items.length-1))]?.ref||'');
+  items.forEach(entry=>{if(!S.packs.some(x=>x.itemRef===entry.ref))S.packs.push(emptyItemPack(entry.ref))});
+  S.packs.forEach((x,i)=>{x.box=i+1;if(!x.description)x.description=items.find(v=>v.ref===x.itemRef)?.item.description||''});
+  quietSave();
+}
+function addItemPack(ref){S.packs.push(emptyItemPack(ref));quietSave();renderLogistics()}
+function removeItemPack(index){const ref=S.packs[index]?.itemRef;if(S.packs.filter(x=>x.itemRef===ref).length===1)return alert('Cada item precisa manter pelo menos uma composição individual.');if(!confirm('Excluir esta composição individual?'))return;S.packs.splice(index,1);quietSave();renderLogistics()}
+function setGeneralMode(value){S.useGeneralPack=value==='yes';quietSave();renderLogistics()}
+function setGeneralPack(key,value){S.generalPack[key]=['marks','notes'].includes(key)?value:Number(value);quietSave();renderLogTotals()}
+function individualTotals(){return S.packs.reduce((a,x)=>({cartons:a.cartons+(+x.cartons||0),packages:a.packages+(+x.packages||0),qty:a.qty+(+x.qty||0),net:a.net+(+x.net||0),gross:a.gross+(+x.gross||0)}),{cartons:0,packages:0,qty:0,net:0,gross:0})}
+function packingTotals(){const p=S.useGeneralPack?S.generalPack:individualTotals();return {cartons:+p.cartons||0,packages:+p.packages||0,qty:+p.qty||0,net:+p.net||0,gross:+p.gross||0}}
+
+function generalFields(){const x=S.generalPack;return `<div class="logrow generalpack"><div class="logrowhead"><div><span class="scopebadge">RESUMO GERAL</span><strong style="margin-left:9px">Carga completa</strong></div><span>Opcional</span></div><div class="logistics-grid"><label>Total de caixas<input type="number" value="${esc(x.cartons)}" oninput="setGeneralPack('cartons',this.value)"></label><label>Total de pacotes<input type="number" value="${esc(x.packages)}" oninput="setGeneralPack('packages',this.value)"></label><label>Total de peças<input type="number" value="${esc(x.qty)}" oninput="setGeneralPack('qty',this.value)"></label><label>Peso líquido geral kg<input type="number" step=".001" value="${esc(x.net)}" oninput="setGeneralPack('net',this.value)"></label><label>Peso bruto geral kg<input type="number" step=".001" value="${esc(x.gross)}" oninput="setGeneralPack('gross',this.value)"></label><label>Comprimento geral cm<input type="number" step=".01" value="${esc(x.length)}" oninput="setGeneralPack('length',this.value)"></label><label>Largura geral cm<input type="number" step=".01" value="${esc(x.width)}" oninput="setGeneralPack('width',this.value)"></label><label>Altura geral cm<input type="number" step=".01" value="${esc(x.height)}" oninput="setGeneralPack('height',this.value)"></label><label class="full">Marcas gerais<input value="${esc(x.marks)}" oninput="setGeneralPack('marks',this.value)"></label><label class="full">Observações gerais<textarea oninput="setGeneralPack('notes',this.value)">${esc(x.notes)}</textarea></label></div></div>`}
+function itemPackCard(x,index,composition){return `<div class="logrow"><div class="logrowhead"><div><span class="scopebadge">ITEM</span><strong style="margin-left:9px">Composição ${composition}</strong></div><button class="btn light mini danger" onclick="removeItemPack(${index})">Excluir</button></div><div class="logistics-grid"><div class="sectionlabel">COMPOSIÇÃO INDIVIDUAL DO ITEM</div><label>Quantidade de caixas<input type="number" value="${esc(x.cartons)}" onchange="setPack(${index},'cartons',this.value)"></label><label>Peças por caixa<input type="number" value="${esc(x.piecesPerCarton)}" onchange="setPack(${index},'piecesPerCarton',this.value)"></label><label>Pacotes por caixa<input type="number" value="${esc(x.packagesPerCarton)}" onchange="setPack(${index},'packagesPerCarton',this.value)"></label><label>Peso líquido por pacote kg<input type="number" step=".001" value="${esc(x.netPerPackage)}" onchange="setPack(${index},'netPerPackage',this.value)"></label><label>Tara da caixa kg<input type="number" step=".001" value="${esc(x.cartonTare)}" onchange="setPack(${index},'cartonTare',this.value)"></label><label>Peso líquido por caixa kg<input type="number" step=".001" value="${esc(x.netPerCarton)}" onchange="setPack(${index},'netPerCarton',this.value)"></label><label>Peso bruto por caixa kg<input type="number" step=".001" value="${esc(x.grossPerCarton)}" onchange="setPack(${index},'grossPerCarton',this.value)"></label><label>Total de pacotes<input type="number" value="${esc(x.packages)}" onchange="setPack(${index},'packages',this.value)"></label><div class="sectionlabel">TOTAIS DESTA COMPOSIÇÃO</div><label>Quantidade total de peças<input type="number" value="${esc(x.qty)}" onchange="setPack(${index},'qty',this.value)"></label><label>Peso líquido total kg<input type="number" step=".001" value="${esc(x.net)}" onchange="setPack(${index},'net',this.value)"></label><label>Peso bruto total kg<input type="number" step=".001" value="${esc(x.gross)}" onchange="setPack(${index},'gross',this.value)"></label><label>Comprimento cm<input type="number" step=".01" value="${esc(x.length)}" onchange="setPack(${index},'length',this.value)"></label><label>Largura cm<input type="number" step=".01" value="${esc(x.width)}" onchange="setPack(${index},'width',this.value)"></label><label>Altura cm<input type="number" step=".01" value="${esc(x.height)}" onchange="setPack(${index},'height',this.value)"></label><div class="calcHint">Os totais são calculados automaticamente, mas permanecem editáveis.</div><label class="full">Descrição do item<textarea onchange="setPack(${index},'description',this.value)">${esc(x.description)}</textarea></label><label class="full">Marcas / identificação<input value="${esc(x.marks)}" onchange="setPack(${index},'marks',this.value)"></label><label class="full">Observações da Expedição<textarea onchange="setPack(${index},'notes',this.value)">${esc(x.notes)}</textarea></label></div></div>`}
+
+renderLogistics=function(){
+  ensureItemPacks();
+  const oldAdd=stage3.querySelector('.panelhead .backcta');if(oldAdd)oldAdd.style.display='none';
+  const items=packingItems();
+  const groups=items.map(entry=>{const rows=S.packs.map((x,i)=>({x,i})).filter(v=>v.x.itemRef===entry.ref);return `<section class="itemgroup"><div class="itemgrouphead"><div><h3>${esc(entry.label)}</h3><small>Pedido ${esc(entry.order)} · PO ${esc(entry.po)} · Quantidade da Invoice: ${esc(entry.item.qty)}</small></div><button class="backcta" onclick="addItemPack('${esc(entry.ref)}')">+ Outra composição deste item</button></div>${rows.map((v,n)=>itemPackCard(v.x,v.i,n+1)).join('')}</section>`}).join('');
+  logisticsRows.innerHTML=`<div class="packmode"><div><h3>Existe peso/embalagem geral da carga?</h3><p>Se não existir, selecione “Não há”. A Packing List usará a soma das composições individuais.</p></div><label>Resumo geral<select onchange="setGeneralMode(this.value)"><option value="no" ${!S.useGeneralPack?'selected':''}>Não há — usar itens individuais</option><option value="yes" ${S.useGeneralPack?'selected':''}>Sim — informar resumo geral</option></select></label></div>${S.useGeneralPack?generalFields():''}${groups}<div id="logTotals"></div>`;
+  renderLogTotals();
+}
+renderLogTotals=function(){
+  if(!document.getElementById('logTotals'))return;const ind=individualTotals(),official=packingTotals();
+  logTotals.innerHTML=`<div class="totalsCompare"><div class="totalsBox"><h4>Soma dos itens individuais</h4><div class="totalsLine"><span>Caixas</span><b>${ind.cartons}</b></div><div class="totalsLine"><span>Pacotes</span><b>${ind.packages}</b></div><div class="totalsLine"><span>Peças</span><b>${ind.qty}</b></div><div class="totalsLine"><span>Peso líquido</span><b>${ind.net.toFixed(3)} kg</b></div><div class="totalsLine"><span>Peso bruto</span><b>${ind.gross.toFixed(3)} kg</b></div></div><div class="totalsBox active"><h4>Total oficial da Packing List</h4><div class="muted">${S.useGeneralPack?'Resumo geral informado pela Expedição':'Não há geral: soma automática dos itens'}</div><div class="totalsLine"><span>Caixas</span><b>${official.cartons}</b></div><div class="totalsLine"><span>Pacotes</span><b>${official.packages}</b></div><div class="totalsLine"><span>Peças</span><b>${official.qty}</b></div><div class="totalsLine"><span>Peso líquido</span><b>${official.net.toFixed(3)} kg</b></div><div class="totalsLine"><span>Peso bruto</span><b>${official.gross.toFixed(3)} kg</b></div></div></div>`;
+}
+processDocuments=function(){
+  logisticsError.textContent='';ensureItemPacks();
+  for(const entry of packingItems()){
+    const rows=S.packs.filter(x=>x.itemRef===entry.ref);
+    if(!rows.length||rows.some(x=>!(+x.cartons)||!(+x.packages)||!(+x.net)||!(+x.gross)))return logisticsError.textContent='Complete caixas, pacotes e pesos de cada composição do item '+entry.item.code+'.';
+    if(rows.some(x=>+x.gross<+x.net))return logisticsError.textContent='O peso bruto não pode ser menor que o líquido no item '+entry.item.code+'.';
+    const packed=rows.reduce((a,x)=>a+(+x.qty||0),0);if(+entry.item.qty&&packed!==+entry.item.qty)return logisticsError.textContent=`A quantidade embalada do item ${entry.item.code} é ${packed}, mas a Invoice possui ${entry.item.qty}.`;
+  }
+  if(S.useGeneralPack&&(!(+S.generalPack.cartons)||!(+S.generalPack.packages)||!(+S.generalPack.net)||!(+S.generalPack.gross)))return logisticsError.textContent='Complete caixas, pacotes e pesos do resumo geral ou selecione “Não há”.';
+  if(S.useGeneralPack&&+S.generalPack.gross<+S.generalPack.net)return logisticsError.textContent='No resumo geral, o peso bruto não pode ser menor que o líquido.';
+  quietSave();saveInvoiceHistory();goStep(4);
+}
+
+const saveInvoiceHistoryV6=saveInvoiceHistory;
+saveInvoiceHistory=function(){saveInvoiceHistoryV6();const records=history(),record=records.find(x=>x.invoiceNo===S.invoiceNo),t=packingTotals();if(record){Object.assign(record,{cartons:t.cartons,packages:t.packages,net:t.net,gross:t.gross,data:JSON.parse(JSON.stringify(S))});localStorage.setItem('cm-invoice-history',JSON.stringify(records))}}
+
+const renderDocsV6=renderDocs;
+renderDocs=function(){
+  renderDocsV6();const items=packingItems(),t=packingTotals();
+  const old=[...packingView.querySelectorAll('.docnote')].find(n=>n.querySelector('b')?.textContent==='PACKAGING DETAILS');old?.remove();
+  const rows=S.packs.map(x=>{const e=items.find(v=>v.ref===x.itemRef);return `<tr><td>${esc(e?.item.code||'—')}</td><td>${esc(x.cartons)}</td><td>${esc(x.piecesPerCarton)}</td><td>${esc(x.packagesPerCarton)}</td><td>${esc(x.netPerPackage)}</td><td>${esc(x.netPerCarton)}</td><td>${esc(x.grossPerCarton)}</td><td>${esc(x.net)}</td><td>${esc(x.gross)}</td></tr>`}).join('');
+  const detail=`<div class="docnote"><b>ITEM PACKAGING DETAILS</b><table><tr><th>Item</th><th>Cartons</th><th>Pc/Carton</th><th>Packs/Carton</th><th>Net/Pack</th><th>Net/Carton</th><th>Gross/Carton</th><th>Net Total</th><th>Gross Total</th></tr>${rows}</table></div>${S.useGeneralPack?`<div class="docnote"><b>GENERAL SHIPMENT SUMMARY</b>Cartons: ${t.cartons} · Packages: ${t.packages} · Pieces: ${t.qty} · Net: ${t.net.toFixed(3)} kg · Gross: ${t.gross.toFixed(3)} kg<br>${esc(S.generalPack.notes||'')}</div>`:`<div class="docnote"><b>GENERAL SHIPMENT SUMMARY</b>Not provided — official totals are the sum of the individual items.</div>`}`;
+  packingView.querySelector('.total')?.insertAdjacentHTML('beforebegin',detail);const total=packingView.querySelector('.total');if(total)total.textContent=`PACKAGES ${t.packages} · CARTONS ${t.cartons} · NET ${t.net.toFixed(3)} KG · GROSS ${t.gross.toFixed(3)} KG`;
+}
+
+ensureItemPacks();quietSave();if(currentStep===3)renderLogistics();
