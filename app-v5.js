@@ -14,19 +14,34 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .charges{width:330px;margin:14px 0 0 auto}.charges td:first-child{font-weight:bold}.charges input{text-align:right}
 .document-actions{display:flex;gap:7px}.linkbtn{border:0;background:transparent;color:#0c5964;text-decoration:underline;cursor:pointer;font-weight:bold}
 .paper table input,.paper table textarea{font-size:12px}
+.unitprice{min-width:84px;text-align:right}.unitmode{display:block;margin-top:3px;font-size:9px}.netsync{background:#eef7f2!important;color:#185f47;font-weight:800}
 </style>`);
 
 function quietSave(){localStorage.setItem('cm-invoice-v4',JSON.stringify(S))}
-function editRoot(key,value){S[key]=value;quietSave();renderSummary();renderDocs()}
+function editRoot(key,value){S[key]=value;quietSave();if(document.getElementById('checks'))renderSummary();renderDocs()}
 function editParty(side,key,value){S[side][key]=value;quietSave();renderDocs()}
 function editClientDoc(key,value){client()[key]=value;quietSave();renderDocs()}
 function editLineDoc(index,key,value){
   let flat=0;
   for(const order of S.orders){
     for(const item of order.items){
-      if(flat===index){item[key]=['qty','unitBRL','netWeight'].includes(key)?Number(value):value;quietSave();renderSummary();renderDocs();return}
+      if(flat===index){item[key]=['qty','unitBRL','netWeight'].includes(key)?Number(value):value;quietSave();if(document.getElementById('checks'))renderSummary();renderDocs();return}
       flat++;
     }
+  }
+}
+function editLineUSD(index,value){
+  let flat=0;
+  for(const order of S.orders)for(const item of order.items){
+    if(flat===index){item.unitUSDOverride=value===''?null:round4(value);quietSave();if(typeof currentStep!=='undefined'&&currentStep===4&&typeof saveInvoiceHistory==='function')saveInvoiceHistory();if(document.getElementById('checks'))renderSummary();renderDocs();return}
+    flat++;
+  }
+}
+function resetLineUSD(index){
+  let flat=0;
+  for(const order of S.orders)for(const item of order.items){
+    if(flat===index){delete item.unitUSDOverride;quietSave();if(typeof currentStep!=='undefined'&&currentStep===4&&typeof saveInvoiceHistory==='function')saveInvoiceHistory();if(document.getElementById('checks'))renderSummary();renderDocs();return}
+    flat++;
   }
 }
 function connectedDescription(){return allItems().map(x=>x.description).filter(Boolean).join(' / ')}
@@ -58,7 +73,7 @@ function renderDocs(){
   <div class="parties">${editableParty('SHIPPER','exporter',S.exporter)}${editableParty('CONSIGNEE','client',c)}</div>
   <div class="docmeta">${docField('INVOICE NUMBER','invoiceNo',S.invoiceNo)}${docField('ISSUE DATE','invoiceDate',S.invoiceDate,'date')}${docField('PO','poDisplay',S.poDisplay||po)}${docField('INCOTERM','incoterm',S.incoterm)}</div>
   <table><tr><th>Item</th><th>NCM/HS Code</th><th>Description</th><th>Net Weight kg</th><th>Qty.</th><th>Unit BRL</th><th>Unit USD</th><th>Total USD</th></tr>
-  ${it.map((x,i)=>`<tr><td>${i+1}</td><td><input class="docedit" value="${esc(x.hs)}" onchange="editLineDoc(${i},'hs',this.value)"></td><td>${lineDescription(i,x)}</td><td><input class="docedit" type="number" step=".001" value="${esc(x.netWeight)}" onchange="editLineDoc(${i},'netWeight',this.value)"></td><td><input class="docedit" type="number" value="${x.qty}" onchange="editLineDoc(${i},'qty',this.value)"></td><td><input class="docedit" type="number" step=".01" value="${x.unitBRL}" onchange="editLineDoc(${i},'unitBRL',this.value)"></td><td>${+S.fx?usd(x.unitBRL/S.fx):'Informe câmbio'}</td><td>${+S.fx?usd(x.qty*x.unitBRL/S.fx):'—'}</td></tr>`).join('')}
+  ${it.map((x,i)=>{const net=itemNetKG(x);return `<tr><td>${i+1}</td><td><input class="docedit" value="${esc(x.hs)}" onchange="editLineDoc(${i},'hs',this.value)"></td><td>${lineDescription(i,x)}</td><td><input class="docedit netsync" value="${net?net.toFixed(3):''}" title="Synchronized with the Packing List" readonly></td><td><input class="docedit" type="number" value="${x.qty}" onchange="editLineDoc(${i},'qty',this.value)"></td><td><input class="docedit" type="number" step=".01" value="${x.unitBRL}" onchange="editLineDoc(${i},'unitBRL',this.value)"></td><td><input class="docedit unitprice" type="number" step=".0001" value="${+S.fx||hasUnitOverride(x)?unitUSD(x).toFixed(4):''}" onchange="editLineUSD(${i},this.value)"><button class="linkbtn unitmode" onclick="resetLineUSD(${i})">${hasUnitOverride(x)?'Manual · usar câmbio':'Automático pelo câmbio'}</button></td><td>${+S.fx||hasUnitOverride(x)?usd(lineUSD(x)):'—'}</td></tr>`}).join('')}
   </table>
   <table class="charges"><tr><td>Goods Value</td><td>${+S.fx?usd(goods):'—'}</td></tr><tr><td>Freight</td><td><input class="docedit" type="number" step=".01" value="${esc(S.freightUSD)}" onchange="editRoot('freightUSD',this.value)"></td></tr><tr><td>Insurance</td><td><input class="docedit" type="number" step=".01" value="${esc(S.insuranceUSD)}" onchange="editRoot('insuranceUSD',this.value)"></td></tr><tr><td>Other Charges</td><td><input class="docedit" type="number" step=".01" value="${esc(S.otherUSD)}" onchange="editRoot('otherUSD',this.value)"></td></tr><tr><td>TOTAL</td><td><b>${+S.fx?usd(final):'—'}</b></td></tr></table>
   <div class="docnote"><b>DECLARATION / NOTES</b><textarea class="docedit docarea" onchange="editRoot('declaration',this.value)">${esc(S.declaration)}</textarea></div>

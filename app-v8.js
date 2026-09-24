@@ -44,7 +44,7 @@ function renderFxRevisionCard(message=''){
 }
 
 function previewIssuedFx(value){
-  const rate=fxNumber(value),goods=rate?operationBRL()/rate:0,total=goods+(+S.freightUSD||0)+(+S.insuranceUSD||0)+(+S.otherUSD||0);
+  const rate=fxNumber(value),goods=rate?usdTotal(rate):0,total=goods+(+S.freightUSD||0)+(+S.insuranceUSD||0)+(+S.otherUSD||0);
   if(document.getElementById('issuedFxTotal'))issuedFxTotal.textContent=rate?usd(total):'—';
   if(document.getElementById('fxUpdateMessage'))fxUpdateMessage.textContent='';
 }
